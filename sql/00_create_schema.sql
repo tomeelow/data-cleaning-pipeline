@@ -1,8 +1,5 @@
-CREATE SCHEMA IF NOT EXISTS raw;
-CREATE SCHEMA IF NOT EXISTS core;
-
-DROP TABLE IF EXISTS raw.listings;
-CREATE TABLE raw.listings (
+DROP TABLE IF EXISTS raw_listings;
+CREATE TABLE raw_listings (
   id TEXT,
   name TEXT,
   host_id TEXT,
@@ -16,22 +13,23 @@ CREATE TABLE raw.listings (
   last_review TEXT,
   reviews_per_month TEXT,
   availability_365 TEXT,
-  _loaded_at TIMESTAMP DEFAULT now()
+  _loaded_at TEXT
 );
 
-CREATE TABLE IF NOT EXISTS core.listings (
-  id BIGINT PRIMARY KEY,
+DROP TABLE IF EXISTS core_listings;
+CREATE TABLE core_listings (
+  id INTEGER PRIMARY KEY,
   name TEXT,
-  host_id BIGINT,
+  host_id INTEGER,
   neighbourhood TEXT,
-  latitude DOUBLE PRECISION,
-  longitude DOUBLE PRECISION,
+  latitude REAL,
+  longitude REAL,
   room_type TEXT,
-  price NUMERIC(10,2),
-  minimum_nights INT,
-  number_of_reviews INT,
-  last_review DATE,
-  reviews_per_month NUMERIC(6,2),
-  availability_365 INT,
-  loaded_at TIMESTAMP DEFAULT now()
+  price REAL,
+  minimum_nights INTEGER,
+  number_of_reviews INTEGER,
+  last_review TEXT,
+  reviews_per_month REAL,
+  availability_365 INTEGER,
+  loaded_at TEXT
 );

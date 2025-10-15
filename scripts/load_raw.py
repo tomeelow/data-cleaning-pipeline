@@ -1,26 +1,33 @@
 import os
-import pandas as pd
-from sqlalchemy import create_engine
-from dotenv import load_dotenv
+import sqlite3
 from pathlib import Path
+import pandas as pd
+from dotenv import load_dotenv
+from datetime import datetime, timezone
 
 load_dotenv()
 
-csv_path = Path("data/raw/listings.csv")
-if not csv_path.exists():
+# DB location (SQLite file)
+DB_PATH = Path(os.getenv("DB_PATH", "data/airbnb.db"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+CSV_PATH = Path("data/raw/listings.csv")
+if not CSV_PATH.exists():
     raise SystemExit("Put Inside Airbnb listings.csv at data/raw/listings.csv")
 
-pgurl = os.getenv("PGURL")
-engine = create_engine(pgurl)
+# 1) Init DB and tables (SQLite DDL)
+with sqlite3.connect(DB_PATH) as con:
+    con.executescript(Path("sql/00_create_schema.sql").read_text())
 
-# ensure schemas/tables exist
-with engine.begin() as conn, open("sql/00_create_schema.sql") as f:
-    conn.execute(f.read())
+# 2) Read CSV
+df = pd.read_csv(
+    CSV_PATH,
+    low_memory=False,
+    encoding="utf-8",
+    encoding_errors="replace",  
+)
 
-# load as text to staging
-df = pd.read_csv(csv_path, low_memory=False)
-# keep only common columns
-rename = {
+cols = {
     "id": "id",
     "name": "name",
     "host_id": "host_id",
@@ -35,10 +42,34 @@ rename = {
     "reviews_per_month": "reviews_per_month",
     "availability_365": "availability_365",
 }
-df = df.rename(columns=rename)[list(rename.values())].copy()
+missing = [k for k in cols if k not in df.columns]
+if missing:
+    raise SystemExit(f"CSV missing expected columns: {missing}")
 
-with engine.begin() as conn:
-    conn.execute("TRUNCATE raw.listings;")
-df.to_sql("listings", engine, schema="raw", if_exists="append", index=False)
+df = df.rename(columns=cols)[list(cols.values())].copy()
+df["_loaded_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-print(f"Loaded {len(df):,} rows into raw.listings")
+# 3) Insert into raw_listings
+def _nan_to_none(v):
+    return None if pd.isna(v) else v
+
+records = [
+    tuple(_nan_to_none(df.at[i, c]) for c in list(cols.values()) + ["_loaded_at"])
+    for i in range(len(df))
+]
+
+with sqlite3.connect(DB_PATH) as con:
+    con.execute("DELETE FROM raw_listings;")
+    if records:
+        placeholders = ",".join(["?"] * len(records[0]))
+        con.executemany(
+            f"""
+            INSERT INTO raw_listings
+            ({",".join(list(cols.values()) + ["_loaded_at"])})
+            VALUES ({placeholders})
+            """,
+            records,
+        )
+    con.commit()
+
+print(f"Loaded {len(df):,} rows into raw_listings (SQLite @ {DB_PATH})")
